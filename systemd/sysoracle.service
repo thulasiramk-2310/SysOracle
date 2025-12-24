@@ -1,9 +1,0 @@
-[Unit]
-Description=SysOracle Monitor
-
-[Service]
-ExecStart=/usr/local/bin/sysoracle
-Restart=always
-
-[Install]
-WantedBy=default.target
