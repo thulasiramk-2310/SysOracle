@@ -1,7 +1,5 @@
 use sysinfo::System;
 
-
-
 #[derive(Clone)]
 pub struct Metrics {
     pub cpu: f32,
@@ -11,8 +9,7 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn collect(system: &mut System) -> Self {
-        system.refresh_cpu();
-        system.refresh_memory();
+        system.refresh_all();  
 
         let cpu = system.global_cpu_info().cpu_usage();
         let memory_used = system.used_memory();
@@ -25,8 +22,6 @@ impl Metrics {
         }
     }
 }
-
-
 
 #[derive(Clone)]
 pub struct ProcInfo {

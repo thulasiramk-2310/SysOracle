@@ -1,5 +1,7 @@
 use std::{io, time::Duration};
 
+use crate::alert::AlertEngine;
+
 use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode},
@@ -20,7 +22,8 @@ use crate::{
 pub struct App {
     system: System,
     lua: LuaEngine,
-    selected_proc: usize, 
+    selected_proc: usize,
+    alerts: AlertEngine,        
 }
 
 impl App {
@@ -29,6 +32,7 @@ impl App {
             system: System::new_all(),
             lua: LuaEngine::new()?,
             selected_proc: 0,
+            alerts: AlertEngine::new(),        
         })
     }
 
@@ -41,23 +45,29 @@ impl App {
         let mut terminal = Terminal::new(backend)?;
 
         loop {
-          
+            
             let metrics = Metrics::collect(&mut self.system);
             let processes: Vec<ProcInfo> = metrics::top_processes(&self.system, 20);
 
             
+            self.alerts.update(&metrics);
+            let alert_list = self.alerts.list();
+
+            
             let _ = self.lua.execute(&metrics);
 
-      
+            
             terminal.draw(|f| {
                 tui::draw(
                     f,
                     &metrics,
                     &processes,
+                    &alert_list,        
                     self.selected_proc,
                 );
             })?;
 
+            
             if event::poll(Duration::from_millis(800))? {
                 if let Event::Key(key) = event::read()? {
                     match key.code {
@@ -76,7 +86,7 @@ impl App {
                         }
 
                         KeyCode::Char('r') => {
-                          
+                            
                         }
 
                         _ => {}

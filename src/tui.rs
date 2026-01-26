@@ -11,6 +11,7 @@ pub fn draw(
     frame: &mut Frame,
     metrics: &Metrics,
     procs: &[ProcInfo],
+    alerts: &[String],       
     selected: usize,
 ) {
     let size = frame.size();
@@ -19,11 +20,11 @@ pub fn draw(
     let main = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),  // CPU + MEM
-            Constraint::Length(4),  // Network
-            Constraint::Min(10),    // Processes
-            Constraint::Length(4),  // Alerts
-            Constraint::Length(3),  // Footer (status bar)
+            Constraint::Length(6),  
+            Constraint::Length(4), 
+            Constraint::Min(10),    
+            Constraint::Length(4),  
+            Constraint::Length(3),  
         ])
         .split(size);
 
@@ -39,7 +40,7 @@ pub fn draw(
     draw_cpu(frame, cpu_mem[0], metrics);
     draw_mem(frame, cpu_mem[1], metrics);
 
-    // ── Network (btop-style)
+    // ── Network
     frame.render_widget(
         Paragraph::new(" RX  ↓  2.4 MB/s\n TX  ↑  0.6 MB/s")
             .block(Block::default().title("Network").borders(Borders::ALL))
@@ -47,20 +48,24 @@ pub fn draw(
         main[1],
     );
 
-
+    // ── Processes
     draw_processes(frame, main[2], procs, selected);
 
-    // ── Alerts
+    // ── Alerts (LIVE)
+    let alert_text = if alerts.is_empty() {
+        " ✓ No active alerts".to_string()
+    } else {
+        alerts.join("\n")
+    };
+
     frame.render_widget(
-        Paragraph::new(
-            " ⚠ High CPU usage\n ✓ Memory normal",
-        )
-        .block(Block::default().title("Alerts").borders(Borders::ALL))
-        .style(Style::default().fg(Color::Yellow)),
+        Paragraph::new(alert_text)
+            .block(Block::default().title("Alerts").borders(Borders::ALL))
+            .style(Style::default().fg(Color::Yellow)),
         main[3],
     );
 
-    
+    // ── Footer / Status Bar
     frame.render_widget(
         Paragraph::new(
             " MODE: PROC | ↑↓ Select | k Kill | r Reload | q Quit "
@@ -72,13 +77,11 @@ pub fn draw(
         )
         .style(
             Style::default()
-                .fg(Color::Cyan)          
-                .bg(Color::Rgb(20, 20, 20)) 
+                .fg(Color::Cyan)
+                .bg(Color::Rgb(20, 20, 20)),
         ),
         main[4],
     );
-
-
 }
 
 
@@ -135,7 +138,6 @@ fn draw_mem(frame: &mut Frame, area: Rect, metrics: &Metrics) {
 
     frame.render_widget(gauge, area);
 }
-
 
 
 fn draw_processes(
