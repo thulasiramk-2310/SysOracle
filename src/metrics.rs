@@ -40,8 +40,9 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn collect(system: &mut System, prev_rx: u64, prev_tx: u64, refresh_rate_ms: u64) -> Self {
-        system.refresh_all();
-
+        // Note: system.refresh_*() methods are called selectively in app.rs before calling this
+        // This avoids double refresh and ensures proper CPU timing
+        
         let cpu = system.global_cpu_info().cpu_usage();
         let memory_used = system.used_memory();
         let memory_total = system.total_memory();
@@ -110,24 +111,47 @@ impl Metrics {
         
         match Nvml::init() {
             Ok(nvml) => {
-                if let Ok(device) = nvml.device_by_index(0) {
-                    let name = device.name().unwrap_or_else(|_| "Unknown GPU".to_string());
-                    let usage = device.utilization_rates()
-                        .map(|u| u.gpu as f32)
-                        .unwrap_or(0.0);
-                    let memory_info = device.memory_info().ok()?;
-                    
-                    Some(GpuInfo {
-                        name,
-                        usage,
-                        memory_used: memory_info.used,
-                        memory_total: memory_info.total,
-                    })
-                } else {
-                    None
+                match nvml.device_count() {
+                    Ok(count) if count > 0 => {
+                        match nvml.device_by_index(0) {
+                            Ok(device) => {
+                                let name = device.name().unwrap_or_else(|_| "Unknown GPU".to_string());
+                                let usage = device.utilization_rates()
+                                    .map(|u| u.gpu as f32)
+                                    .unwrap_or(0.0);
+                                    
+                                if let Ok(memory_info) = device.memory_info() {
+                                    Some(GpuInfo {
+                                        name,
+                                        usage,
+                                        memory_used: memory_info.used,
+                                        memory_total: memory_info.total,
+                                    })
+                                } else {
+                                    eprintln!("[SysOracle] GPU memory info unavailable");
+                                    None
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[SysOracle] Failed to get GPU device: {:?}", e);
+                                None
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        eprintln!("[SysOracle] No NVIDIA GPUs detected");
+                        None
+                    }
+                    Err(e) => {
+                        eprintln!("[SysOracle] Failed to get GPU count: {:?}", e);
+                        None
+                    }
                 }
             }
-            Err(_) => None,
+            Err(e) => {
+                eprintln!("[SysOracle] NVML initialization failed: {:?}", e);
+                None
+            }
         }
     }
 

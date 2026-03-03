@@ -26,13 +26,19 @@ pub fn draw(
     mem_history: &[f32],
     show_kill_popup: bool,
 ) {
-    let (_bg_color, _fg_color, _accent_color) = match theme {
+    let (bg_color, _fg_color, _accent_color) = match theme {
         Theme::Dark => (Color::Rgb(20, 20, 20), Color::White, Color::Cyan),
         Theme::Light => (Color::White, Color::Black, Color::Blue),
     };
 
-    let _size = frame.size();
+    let size = frame.size();
 
+    // Clear entire frame with background to prevent artifacts
+    let background = Block::default()
+        .style(Style::default().bg(bg_color));
+    frame.render_widget(background, size);
+
+    // Render exactly one view mode - strict match prevents overlapping
     match view_mode {
         ViewMode::All => {
             draw_all_view(frame, metrics, procs, alerts, selected, theme, sort_mode, cpu_history, mem_history)
@@ -88,19 +94,37 @@ fn draw_all_view_full(
 ) {
     let size = frame.size();
 
-    let main = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),  // Header
-            Constraint::Length(8),  // CPU & MEM Gauges + Graphs
-            Constraint::Length(4),  // Network
-            Constraint::Length(4),  // GPU
-            Constraint::Length(6),  // Disks
-            Constraint::Min(8),     // Processes
-            Constraint::Length(5),  // Alerts
-            Constraint::Length(3),  // Footer
-        ])
-        .split(size);
+    // Conditionally adjust layout based on GPU availability
+    let has_gpu = metrics.gpu.is_some();
+    
+    let main = if has_gpu {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),  // Header
+                Constraint::Length(8),  // CPU & MEM Gauges + Graphs
+                Constraint::Length(4),  // Network
+                Constraint::Length(4),  // GPU
+                Constraint::Length(6),  // Disks
+                Constraint::Min(8),     // Processes
+                Constraint::Length(5),  // Alerts
+                Constraint::Length(3),  // Footer
+            ])
+            .split(size)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),  // Header
+                Constraint::Length(8),  // CPU & MEM Gauges + Graphs
+                Constraint::Length(4),  // Network
+                Constraint::Length(6),  // Disks
+                Constraint::Min(8),     // Processes
+                Constraint::Length(5),  // Alerts
+                Constraint::Length(3),  // Footer
+            ])
+            .split(size)
+    };
 
     // Header
     draw_header(frame, main[0], ViewMode::All, theme, metrics.uptime);
@@ -117,20 +141,19 @@ fn draw_all_view_full(
     // Network
     draw_network(frame, main[2], metrics, theme);
 
-    // GPU
-    draw_gpu(frame, main[3], metrics, theme);
-
-    // Disks
-    draw_disks(frame, main[4], metrics, theme);
-
-    // Processes
-    draw_processes(frame, main[5], procs, selected, theme, sort_mode);
-
-    // Alerts
-    draw_alerts(frame, main[6], alerts, theme);
-
-    // Footer
-    draw_footer(frame, main[7], ViewMode::All, theme);
+    // GPU and subsequent panels - offset based on GPU presence
+    if has_gpu {
+        draw_gpu(frame, main[3], metrics, theme);
+        draw_disks(frame, main[4], metrics, theme);
+        draw_processes(frame, main[5], procs, selected, theme, sort_mode);
+        draw_alerts(frame, main[6], alerts, theme);
+        draw_footer(frame, main[7], ViewMode::All, theme);
+    } else {
+        draw_disks(frame, main[3], metrics, theme);
+        draw_processes(frame, main[4], procs, selected, theme, sort_mode);
+        draw_alerts(frame, main[5], alerts, theme);
+        draw_footer(frame, main[6], ViewMode::All, theme);
+    }
 }
 
 fn draw_all_view_compact(
@@ -145,6 +168,7 @@ fn draw_all_view_compact(
     mem_history: &[f32],
 ) {
     let size = frame.size();
+    let has_gpu = metrics.gpu.is_some();
 
     let main = Layout::default()
         .direction(Direction::Vertical)
@@ -171,14 +195,18 @@ fn draw_all_view_compact(
     draw_cpu_gauge_with_graph(frame, metrics_area[0], metrics, theme, cpu_history);
     draw_mem_gauge_with_graph(frame, metrics_area[1], metrics, theme, mem_history);
 
-    // Network & GPU side by side
-    let net_gpu_area = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(main[2]);
+    // Network & GPU side by side (or just Network if no GPU)
+    if has_gpu {
+        let net_gpu_area = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(main[2]);
 
-    draw_network(frame, net_gpu_area[0], metrics, theme);
-    draw_gpu(frame, net_gpu_area[1], metrics, theme);
+        draw_network(frame, net_gpu_area[0], metrics, theme);
+        draw_gpu(frame, net_gpu_area[1], metrics, theme);
+    } else {
+        draw_network(frame, main[2], metrics, theme);
+    }
 
     // Disks
     draw_disks(frame, main[3], metrics, theme);
@@ -347,10 +375,12 @@ fn draw_header(frame: &mut Frame, area: Rect, mode: ViewMode, theme: Theme, upti
         ViewMode::Process => "PROCESS",
     };
 
+    // Capitalize OS name (e.g., "Windows" instead of "windows x86_64")
+    let os_name = std::env::consts::OS;
     let os_info = format!(
-        "{} {}",
-        std::env::consts::OS,
-        std::env::consts::ARCH
+        "{}{}",
+        os_name.chars().next().unwrap().to_uppercase(),
+        &os_name[1..]
     );
 
     // Format uptime as hours:minutes
@@ -358,13 +388,34 @@ fn draw_header(frame: &mut Frame, area: Rect, mode: ViewMode, theme: Theme, upti
     let minutes = (uptime_secs % 3600) / 60;
     let uptime_str = format!("{}h {:02}m", hours, minutes);
 
-    let header_text = format!("  SysOracle v2.0.0  |  {}  |  Mode: {}  |  Uptime: {}", os_info, mode_str, uptime_str);
+    // Get current local time
+    let now = chrono::Local::now();
+    let time_str = now.format("%H:%M:%S").to_string();
 
-    let header = Paragraph::new(header_text)
+    // Split header into left and right sections for better visibility
+    let header_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(70),  // Left: App info + uptime
+            Constraint::Percentage(30),  // Right: current time
+        ])
+        .split(area);
+
+    // Left section: App name, OS, mode, uptime with clear labels
+    let left_text = format!("SysOracle  |  OS: {}  |  View: {}  |  Uptime: {}", 
+        os_info, mode_str, uptime_str);
+    let left_header = Paragraph::new(left_text)
         .style(Style::default().bg(bg_color).fg(fg_color).add_modifier(Modifier::BOLD))
-        .alignment(Alignment::Center);
+        .alignment(Alignment::Left);
 
-    frame.render_widget(header, area);
+    // Right section: Current time
+    let right_text = format!("Time: {}", time_str);
+    let right_header = Paragraph::new(right_text)
+        .style(Style::default().bg(bg_color).fg(fg_color).add_modifier(Modifier::BOLD))
+        .alignment(Alignment::Right);
+
+    frame.render_widget(left_header, header_layout[0]);
+    frame.render_widget(right_header, header_layout[1]);
 }
 
 fn draw_cpu_gauge_with_graph(
@@ -374,10 +425,20 @@ fn draw_cpu_gauge_with_graph(
     theme: Theme,
     cpu_history: &[f32],
 ) {
-    let split = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(3)])
-        .split(area);
+    // Only render graph if area is large enough
+    let can_render_graph = area.height >= 8;
+    
+    let split = if can_render_graph {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(5)])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3)])
+            .split(area)
+    };
 
     let cpu = metrics.cpu.clamp(0.0, 100.0) as u16;
     let color = if cpu > 80 {
@@ -391,7 +452,7 @@ fn draw_cpu_gauge_with_graph(
     let gauge = Gauge::default()
         .block(
             Block::default()
-                .title(format!("CPU {:.1}%", cpu))
+                .title(format!(" CPU: {:.1}% ", cpu))
                 .borders(Borders::ALL)
                 .border_style(get_border_style(theme)),
         )
@@ -400,8 +461,8 @@ fn draw_cpu_gauge_with_graph(
 
     frame.render_widget(gauge, split[0]);
 
-    // Mini graph
-    if cpu_history.len() > 1 {
+    // Mini graph (only if space available)
+    if can_render_graph && cpu_history.len() > 1 && split.len() > 1 {
         draw_mini_graph(frame, split[1], cpu_history, color, theme);
     }
 }
@@ -413,10 +474,20 @@ fn draw_mem_gauge_with_graph(
     theme: Theme,
     mem_history: &[f32],
 ) {
-    let split = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(3)])
-        .split(area);
+    // Only render graph if area is large enough
+    let can_render_graph = area.height >= 8;
+    
+    let split = if can_render_graph {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Min(5)])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3)])
+            .split(area)
+    };
 
     let percent = ((metrics.memory_used as f64 / metrics.memory_total as f64) * 100.0)
         .clamp(0.0, 100.0) as u16;
@@ -435,7 +506,7 @@ fn draw_mem_gauge_with_graph(
     let gauge = Gauge::default()
         .block(
             Block::default()
-                .title(format!("MEM {}% ({} / {} MB)", percent, used, total))
+                .title(format!(" MEM: {}% ({} / {} MB) ", percent, used, total))
                 .borders(Borders::ALL)
                 .border_style(get_border_style(theme)),
         )
@@ -444,14 +515,31 @@ fn draw_mem_gauge_with_graph(
 
     frame.render_widget(gauge, split[0]);
 
-    // Mini graph
-    if mem_history.len() > 1 {
+    // Mini graph (only if space available)
+    if can_render_graph && mem_history.len() > 1 && split.len() > 1 {
         draw_mini_graph(frame, split[1], mem_history, color, theme);
     }
 }
 
 fn draw_mini_graph(frame: &mut Frame, area: Rect, history: &[f32], color: Color, _theme: Theme) {
-    let data: Vec<(f64, f64)> = history
+    // Safety check: don't render if area is too small
+    if area.width < 10 || area.height < 3 {
+        return;
+    }
+
+    // Clamp history length to available width to prevent graph clipping
+    let max_points = (area.width.saturating_sub(4)) as usize; // Account for borders/padding
+    let history_slice = if history.len() > max_points {
+        &history[history.len() - max_points..]
+    } else {
+        history
+    };
+
+    if history_slice.is_empty() {
+        return;
+    }
+
+    let data: Vec<(f64, f64)> = history_slice
         .iter()
         .enumerate()
         .map(|(i, &val)| (i as f64, val as f64))
@@ -463,7 +551,7 @@ fn draw_mini_graph(frame: &mut Frame, area: Rect, history: &[f32], color: Color,
         .style(Style::default().fg(color))
         .data(&data);
 
-    let x_max = history.len().max(2) as f64;
+    let x_max = history_slice.len().max(2) as f64;
 
     let chart = Chart::new(vec![dataset])
         .x_axis(
@@ -487,6 +575,18 @@ fn draw_cpu_fullscreen(
     theme: Theme,
     cpu_history: &[f32],
 ) {
+    // Safety check: don't render if area is too small
+    if area.width < 20 || area.height < 15 {
+        // Render simple message
+        let msg = Paragraph::new("Terminal too small for CPU view\nResize or switch to All view (press 'a')")
+            .block(Block::default()
+                .title("CPU View")
+                .borders(Borders::ALL))
+            .alignment(Alignment::Center);
+        frame.render_widget(msg, area);
+        return;
+    }
+
     // Split area into graph and per-core bars
     let num_cores = metrics.cpu_cores.len();
     let cores_height = (num_cores as u16).min(12) + 2; // +2 for borders
@@ -509,8 +609,16 @@ fn draw_cpu_fullscreen(
         Color::Green
     };
 
-    if cpu_history.len() > 1 {
-        let data: Vec<(f64, f64)> = cpu_history
+    if cpu_history.len() > 1 && split[0].height >= 5 {
+        // Clamp history to available width
+        let max_points = (split[0].width.saturating_sub(10)) as usize;
+        let history_slice = if cpu_history.len() > max_points {
+            &cpu_history[cpu_history.len() - max_points..]
+        } else {
+            cpu_history
+        };
+
+        let data: Vec<(f64, f64)> = history_slice
             .iter()
             .enumerate()
             .map(|(i, &val)| (i as f64, val as f64))
@@ -522,7 +630,7 @@ fn draw_cpu_fullscreen(
             .style(Style::default().fg(color))
             .data(&data);
 
-        let x_max = cpu_history.len().max(2) as f64;
+        let x_max = history_slice.len().max(2) as f64;
 
         let chart = Chart::new(vec![dataset])
             .block(
@@ -558,6 +666,11 @@ fn draw_cpu_cores(
     theme: Theme,
 ) {
     use ratatui::text::{Line, Span};
+    
+    // Safety check: don't render if area is too small
+    if area.width < 30 || area.height < 3 {
+        return;
+    }
     
     let mut lines: Vec<Line> = Vec::new();
     
@@ -615,6 +728,17 @@ fn draw_memory_fullscreen(
     theme: Theme,
     mem_history: &[f32],
 ) {
+    // Safety check: don't render if area is too small
+    if area.width < 20 || area.height < 10 {
+        let msg = Paragraph::new("Terminal too small for Memory view\nResize or switch to All view (press 'a')")
+            .block(Block::default()
+                .title("Memory View")
+                .borders(Borders::ALL))
+            .alignment(Alignment::Center);
+        frame.render_widget(msg, area);
+        return;
+    }
+
     let mem_percent = ((metrics.memory_used as f64 / metrics.memory_total as f64) * 100.0) as f32;
     let color = if mem_percent > 85.0 {
         Color::Red
@@ -624,8 +748,16 @@ fn draw_memory_fullscreen(
         Color::Blue
     };
 
-    if mem_history.len() > 1 {
-        let data: Vec<(f64, f64)> = mem_history
+    if mem_history.len() > 1 && area.height >= 5 {
+        // Clamp history to available width
+        let max_points = (area.width.saturating_sub(10)) as usize;
+        let history_slice = if mem_history.len() > max_points {
+            &mem_history[mem_history.len() - max_points..]
+        } else {
+            mem_history
+        };
+
+        let data: Vec<(f64, f64)> = history_slice
             .iter()
             .enumerate()
             .map(|(i, &val)| (i as f64, val as f64))
@@ -637,7 +769,7 @@ fn draw_memory_fullscreen(
             .style(Style::default().fg(color))
             .data(&data);
 
-        let x_max = mem_history.len().max(2) as f64;
+        let x_max = history_slice.len().max(2) as f64;
 
         let chart = Chart::new(vec![dataset])
             .block(
@@ -673,7 +805,7 @@ fn draw_network(frame: &mut Frame, area: Rect, metrics: &Metrics, theme: Theme) 
     let tx_mb = metrics.network_tx as f64 / 1024.0 / 1024.0;
 
     let text = format!(
-        " RX  ↓  {:.2} MB/s  ({:.0} MB total)\n TX  ↑  {:.2} MB/s  ({:.0} MB total)",
+        "↓ RX: {:.2} MB/s  (Total: {:.1} MB)\n↑ TX: {:.2} MB/s  (Total: {:.1} MB)",
         metrics.network_rx_speed, rx_mb,
         metrics.network_tx_speed, tx_mb
     );
@@ -682,7 +814,7 @@ fn draw_network(frame: &mut Frame, area: Rect, metrics: &Metrics, theme: Theme) 
         Paragraph::new(text)
             .block(
                 Block::default()
-                    .title("Network")
+                    .title(" Network ")
                     .borders(Borders::ALL)
                     .border_style(get_border_style(theme)),
             )
@@ -698,7 +830,7 @@ fn draw_gpu(frame: &mut Frame, area: Rect, metrics: &Metrics, theme: Theme) {
         let mem_percent = gpu.memory_used as f64 / gpu.memory_total as f64 * 100.0;
         
         format!(
-            " GPU: {}\n Usage: {:.1}%\n VRAM: {:.0} / {:.0} MB ({:.1}%)",
+            "{}\nUsage: {:.1}%\nVRAM: {:.0} / {:.0} MB ({:.1}%)",
             gpu.name,
             gpu.usage,
             mem_used_mb,
@@ -706,7 +838,7 @@ fn draw_gpu(frame: &mut Frame, area: Rect, metrics: &Metrics, theme: Theme) {
             mem_percent
         )
     } else {
-        " GPU: N/A\n No NVIDIA GPU detected or feature disabled".to_string()
+        "No NVIDIA GPU detected or feature disabled".to_string()
     };
 
     let color = if metrics.gpu.is_some() {
@@ -719,7 +851,7 @@ fn draw_gpu(frame: &mut Frame, area: Rect, metrics: &Metrics, theme: Theme) {
         Paragraph::new(text)
             .block(
                 Block::default()
-                    .title("GPU")
+                    .title(" GPU ")
                     .borders(Borders::ALL)
                     .border_style(get_border_style(theme)),
             )
@@ -731,11 +863,20 @@ fn draw_gpu(frame: &mut Frame, area: Rect, metrics: &Metrics, theme: Theme) {
 fn draw_disks(frame: &mut Frame, area: Rect, metrics: &Metrics, theme: Theme) {
     use ratatui::text::{Line, Span};
     
+    // Safety check: don't render if area is too small
+    if area.width < 30 || area.height < 3 {
+        return;
+    }
+    
     let mut lines: Vec<Line> = Vec::new();
     
     if metrics.disks.is_empty() {
         lines.push(Line::from(" No disks detected"));
     } else {
+        // Calculate dynamic bar width based on available space
+        let available_width = area.width.saturating_sub(40).max(10) as usize;
+        let bar_width = available_width.min(20);
+        
         for disk in &metrics.disks {
             let used_gb = disk.used as f64 / 1024.0 / 1024.0 / 1024.0;
             let total_gb = disk.total as f64 / 1024.0 / 1024.0 / 1024.0;
@@ -749,9 +890,8 @@ fn draw_disks(frame: &mut Frame, area: Rect, metrics: &Metrics, theme: Theme) {
                 Color::Cyan
             };
             
-            let bar_width = 15;
             let filled = ((percent as f32 / 100.0) * bar_width as f32) as usize;
-            let empty = bar_width - filled;
+            let empty = bar_width.saturating_sub(filled);
             
             let line = format!(
                 " {:<12} {}{}  {}% ({:.1}/{:.1} GB)",
@@ -773,7 +913,7 @@ fn draw_disks(frame: &mut Frame, area: Rect, metrics: &Metrics, theme: Theme) {
         Paragraph::new(lines)
             .block(
                 Block::default()
-                    .title("Disk Usage")
+                    .title(" Disk Usage ")
                     .borders(Borders::ALL)
                     .border_style(get_border_style(theme)),
             ),
@@ -830,7 +970,7 @@ fn draw_processes(
     .header(header)
     .block(
         Block::default()
-            .title(format!("Processes (Sorted by: {}) | ↑↓ navigate | s sort | k kill", sort_indicator))
+            .title(format!(" Processes [Sort: {}] - Use ↑↓ to navigate, 's' to toggle sort, 'k' to kill ", sort_indicator))
             .borders(Borders::ALL)
             .border_style(get_border_style(theme)),
     )
@@ -856,7 +996,7 @@ fn draw_alerts(frame: &mut Frame, area: Rect, alerts: &[String], theme: Theme) {
         Paragraph::new(format!(" {}", alert_text))
             .block(
                 Block::default()
-                    .title("Alerts")
+                    .title(" Alerts ")
                     .borders(Borders::ALL)
                     .border_style(get_border_style(theme)),
             )
@@ -872,15 +1012,15 @@ fn draw_footer(frame: &mut Frame, area: Rect, mode: ViewMode, theme: Theme) {
     };
 
     let keys = match mode {
-        ViewMode::All => "a All | c CPU | m Memory | p Process | s Sort | t Theme | q Quit",
-        ViewMode::Cpu => "a All | c CPU | m Memory | p Process | t Theme | q Quit",
-        ViewMode::Memory => "a All | c CPU | m Memory | p Process | t Theme | q Quit",
-        ViewMode::Process => "a All | ↑↓ Select | s Sort | k Kill | t Theme | q Quit",
+        ViewMode::All => "a: All | c: CPU | m: Memory | p: Process | s: Sort | t: Theme | q: Quit",
+        ViewMode::Cpu => "a: All | c: CPU | m: Memory | p: Process | t: Theme | q: Quit",
+        ViewMode::Memory => "a: All | c: CPU | m: Memory | p: Process | t: Theme | q: Quit",
+        ViewMode::Process => "a: All | ↑↓: Navigate | s: Sort | k: Kill | t: Theme | q: Quit",
     };
 
-    let footer = Paragraph::new(format!("  {}", keys))
+    let footer = Paragraph::new(keys)
         .style(Style::default().bg(bg_color).fg(fg_color))
-        .alignment(Alignment::Left);
+        .alignment(Alignment::Center);
 
     frame.render_widget(footer, area);
 }
