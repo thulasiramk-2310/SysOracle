@@ -1,8 +1,16 @@
+# SysOracle Configuration File
+
 [general]
-refresh_rate = 1000
+# Refresh rate in milliseconds (default: 800)
+refresh_rate = 800
 
 [lua]
+# Directory containing Lua alert rules
 rules_dir = "lua/rules"
 
 [ui]
+# Show process list in dashboard
 show_processes = true
+
+# History size for CPU/Memory graphs (default: 60)
+history_size = 60
