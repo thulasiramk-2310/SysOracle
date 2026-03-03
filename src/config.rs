@@ -1,36 +1,49 @@
 use serde::Deserialize;
 use std::fs;
-use std::path::PathBuf;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub general: General,
     pub lua: Lua,
     pub ui: Ui,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct General {
     pub refresh_rate: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Lua {
     pub rules_dir: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Ui {
     pub show_processes: bool,
+    pub history_size: Option<usize>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            general: General { refresh_rate: 800 },
+            lua: Lua {
+                rules_dir: "lua/rules".to_string(),
+            },
+            ui: Ui {
+                show_processes: true,
+                history_size: Some(60),
+            },
+        }
+    }
 }
 
 pub fn load_config() -> Config {
-    let mut path = dirs::config_dir().unwrap_or(PathBuf::from("."));
-    path.push("sysoracle/config.toml");
-
-    let content = fs::read_to_string(path)
-        .expect("Failed to read config.toml");
-
-    toml::from_str(&content)
-        .expect("Invalid config.toml")
+    // Try to load from current directory first, then fall back to default
+    if let Ok(content) = fs::read_to_string("config.toml") {
+        toml::from_str(&content).unwrap_or_default()
+    } else {
+        Config::default()
+    }
 }
