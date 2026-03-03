@@ -16,8 +16,15 @@
 * 📝 **Process management** - Browse, sort, and kill processes with confirmation
 * 🤖 **Lua scripting** - Programmable alerts and automation
 * ⚡ **Configurable** - Adjust refresh rate, history size, and more
-* 🌐 **Network stats** - Monitor RX/TX bandwidth
+* 🌐 **Network stats** - Real-time speed (MB/s) and total bandwidth
 * 🎯 **Keyboard-driven** - No mouse required
+* 🔥 **Per-core CPU monitoring** - Individual core usage bars with color coding *(v2.0)*
+* 💾 **Sort toggle** - Switch between CPU/Memory sorting *(v2.0)*
+* ⚡ **Live network speed** - Real-time MB/s transfer rates *(v2.0)*
+* 🎮 **GPU monitoring** - NVIDIA GPU usage and VRAM tracking *(v3.0)*
+* 💿 **Disk usage** - Multi-disk space monitoring with visual bars *(v3.0)*
+* ⏱️ **System uptime** - Live uptime display in header *(v3.0)*
+* 📱 **Responsive layouts** - Auto-adapts to terminal size (FULL/COMPACT/MINIMAL) *(v3.0)*
 
 ## 🎮 Quick Start
 
@@ -26,14 +33,21 @@
 #### Prerequisites
 * Rust (>= 1.75)
 * Cargo
+* (Optional) NVIDIA drivers for GPU monitoring
 
 #### Build & Run
 
+**Standard build:**
 ```bash
 git clone https://github.com/your-username/sysoracle.git
 cd sysoracle
 cargo build --release
 ./target/release/sysoracle
+```
+
+**With GPU support:**
+```bash
+cargo build --release --features gpu
 ```
 
 Or run directly in development mode:
@@ -47,9 +61,10 @@ cargo run
 | Key | Action |
 |-----|--------|
 | `a` | Show all panels (dashboard view) |
-| `c` | CPU-only fullscreen view |
+| `c` | CPU-only fullscreen view (with per-core bars) |
 | `m` | Memory-only fullscreen view |
 | `p` | Process-only fullscreen view |
+| `s` | Toggle sort mode (CPU ⇄ Memory) |
 | `t` | Toggle theme (Dark/Light) |
 | `↑` / `↓` | Navigate process list |
 | `k` | Kill selected process (with confirmation) |

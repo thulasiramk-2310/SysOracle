@@ -1,6 +1,6 @@
 [package]
 name = "sysoracle"
-version = "0.1.0"
+version = "2.0.0"
 edition = "2021"
 
 [dependencies]
@@ -14,3 +14,8 @@ toml = "0.8"
 anyhow = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
+nvml-wrapper = { version = "0.10", optional = true }
+
+[features]
+default = []
+gpu = ["nvml-wrapper"]
