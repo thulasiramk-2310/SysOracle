@@ -34,6 +34,12 @@ pub enum Theme {
     Light,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SortMode {
+    Cpu,
+    Memory,
+}
+
 pub struct App {
     system: System,
     lua: LuaEngine,
@@ -41,11 +47,14 @@ pub struct App {
     alerts: AlertEngine,
     view_mode: ViewMode,
     theme: Theme,
+    sort_mode: SortMode,
     cpu_history: Vec<f32>,
     mem_history: Vec<f32>,
     history_size: usize,
     show_kill_popup: bool,
     refresh_rate: u64,
+    prev_network_rx: u64,
+    prev_network_tx: u64,
 }
 
 impl App {
@@ -60,11 +69,14 @@ impl App {
             alerts: AlertEngine::new(),
             view_mode: ViewMode::All,
             theme: Theme::Dark,
+            sort_mode: SortMode::Cpu,
             cpu_history: Vec::new(),
             mem_history: Vec::new(),
             history_size,
             show_kill_popup: false,
             refresh_rate,
+            prev_network_rx: 0,
+            prev_network_tx: 0,
         })
     }
 
@@ -77,9 +89,33 @@ impl App {
         let mut terminal = Terminal::new(backend)?;
 
         loop {
-            // Collect metrics
-            let metrics = Metrics::collect(&mut self.system);
-            let processes: Vec<ProcInfo> = metrics::top_processes(&self.system, 20);
+            // Collect metrics with network speed
+            let metrics = Metrics::collect(
+                &mut self.system,
+                self.prev_network_rx,
+                self.prev_network_tx,
+                self.refresh_rate,
+            );
+
+            // Update previous network values for next cycle
+            self.prev_network_rx = metrics.network_rx;
+            self.prev_network_tx = metrics.network_tx;
+
+            // Get processes and sort based on mode
+            let mut processes: Vec<ProcInfo> = metrics::top_processes(&self.system, 20);
+            match self.sort_mode {
+                SortMode::Cpu => {
+                    processes.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap());
+                }
+                SortMode::Memory => {
+                    processes.sort_by(|a, b| b.mem.partial_cmp(&a.mem).unwrap());
+                }
+            }
+
+            // Clamp selected process index
+            if self.selected_proc >= processes.len() && !processes.is_empty() {
+                self.selected_proc = processes.len() - 1;
+            }
 
             // Update history
             self.cpu_history.push(metrics.cpu);
@@ -110,6 +146,7 @@ impl App {
                     self.selected_proc,
                     self.view_mode,
                     self.theme,
+                    self.sort_mode,
                     &self.cpu_history,
                     &self.mem_history,
                     self.show_kill_popup,
@@ -157,6 +194,14 @@ impl App {
                                     Theme::Dark => Theme::Light,
                                     Theme::Light => Theme::Dark,
                                 };
+                            }
+
+                            KeyCode::Char('s') => {
+                                self.sort_mode = match self.sort_mode {
+                                    SortMode::Cpu => SortMode::Memory,
+                                    SortMode::Memory => SortMode::Cpu,
+                                };
+                                self.selected_proc = 0;
                             }
 
                             KeyCode::Up => {

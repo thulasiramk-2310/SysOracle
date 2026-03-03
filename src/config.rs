@@ -4,6 +4,7 @@ use std::fs;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub general: General,
+    #[allow(dead_code)]
     pub lua: Lua,
     pub ui: Ui,
 }
@@ -15,11 +16,13 @@ pub struct General {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Lua {
+    #[allow(dead_code)]
     pub rules_dir: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Ui {
+    #[allow(dead_code)]
     pub show_processes: bool,
     pub history_size: Option<usize>,
 }
