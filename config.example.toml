@@ -1,0 +1,48 @@
+# SysOracle - Advanced Configuration Example
+# Copy this to config.toml and customize as needed
+
+[general]
+# Refresh rate in milliseconds
+# Lower = more responsive, higher = less CPU usage
+# Default: 800
+# Recommended range: 500-2000
+refresh_rate = 800
+
+[lua]
+# Directory containing Lua alert rules
+# All .lua files in this directory will be loaded automatically
+# Default: "lua/rules"
+rules_dir = "lua/rules"
+
+[ui]
+# Show process list in the dashboard view
+# Set to false to hide processes and give more space to graphs
+# Default: true
+show_processes = true
+
+# Number of data points to keep in history for graphs
+# Higher values = more history but more memory usage
+# Default: 60 (about 48 seconds at 800ms refresh)
+# Recommended range: 30-120
+history_size = 60
+
+# Example configurations for different use cases:
+
+# High Performance Mode (minimal resource usage)
+# [general]
+# refresh_rate = 1500
+# [ui]
+# history_size = 30
+
+# Detailed Monitoring Mode (maximum information)
+# [general]
+# refresh_rate = 500
+# [ui]
+# history_size = 120
+
+# Server Monitoring Mode (balanced)
+# [general]
+# refresh_rate = 1000
+# [ui]
+# history_size = 60
+# show_processes = true
