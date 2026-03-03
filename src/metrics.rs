@@ -1,24 +1,38 @@
-use sysinfo::System;
+use sysinfo::{Networks, System};
 
 #[derive(Clone)]
 pub struct Metrics {
     pub cpu: f32,
     pub memory_used: u64,
     pub memory_total: u64,
+    pub network_rx: u64,
+    pub network_tx: u64,
 }
 
 impl Metrics {
     pub fn collect(system: &mut System) -> Self {
-        system.refresh_all();  
+        system.refresh_all();
 
         let cpu = system.global_cpu_info().cpu_usage();
         let memory_used = system.used_memory();
         let memory_total = system.total_memory();
 
+        // Network stats
+        let networks = Networks::new_with_refreshed_list();
+        let mut total_rx = 0;
+        let mut total_tx = 0;
+
+        for (_interface_name, data) in &networks {
+            total_rx += data.total_received();
+            total_tx += data.total_transmitted();
+        }
+
         Self {
             cpu,
             memory_used,
             memory_total,
+            network_rx: total_rx,
+            network_tx: total_tx,
         }
     }
 }
